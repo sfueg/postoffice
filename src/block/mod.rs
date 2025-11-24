@@ -21,7 +21,8 @@ use replace_topic::ReplaceTopicBlock;
 use crate::{
     block::{
         convert_body::{ConvertBodyBlock, ConvertBodyConfig},
-        lua_filter::{LuaFilterBlock, LuaFilterConfig}, wait::WaitBlock,
+        lua_filter::{LuaFilterBlock, LuaFilterConfig},
+        wait::WaitBlock,
     },
     message::InternalMessage,
 };
@@ -80,7 +81,7 @@ pub fn make_block(config: BlockConfig) -> anyhow::Result<BlockHandle> {
         BlockConfig::RemoveLeadingSlash { to } => (to, Box::new(RemoveLeadingSlashBlock {})),
         BlockConfig::RemoveBody { to } => (to, Box::new(RemoveBodyBlock {})),
         BlockConfig::ReplaceBody { to, config } => (to, Box::new(ReplaceBodyBlock { config })),
-        BlockConfig::MatchTopic { to, config } => (to, Box::new(MatchTopicBlock { config })),
+        BlockConfig::MatchTopic { to, config } => (to, Box::new(MatchTopicBlock::new(config)?)),
         BlockConfig::ReplaceTopic { to, config } => (to, Box::new(ReplaceTopicBlock { config })),
         BlockConfig::LuaFilter { to, config } => (to, Box::new(LuaFilterBlock::new(config)?)),
         BlockConfig::ConvertBody { to, config } => (to, Box::new(ConvertBodyBlock { config })),
