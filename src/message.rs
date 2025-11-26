@@ -3,7 +3,7 @@ use std::vec;
 use anyhow::Context;
 use bytes::Bytes;
 use rosc::{OscArray, OscType};
-use serde_json::{Number, Value};
+use serde_json::{Number, Value, json};
 
 #[derive(Debug, Clone)]
 pub struct InternalMessage {
@@ -32,7 +32,7 @@ impl InternalMessageData {
             Self::String(value) => Ok(Self::String(value)),
             Self::Binary(bytes) => Ok(Self::String(Self::binary_to_string(bytes)?)),
             Self::Json(value) => Ok(Self::String(serde_json::to_string(&value)?)),
-            Self::OSC(args) => todo!(),
+            Self::OSC(_) => Err(anyhow::Error::msg("Can't convert OSC to string")),
         }
     }
 
@@ -56,7 +56,7 @@ impl InternalMessageData {
             Self::Json(value) => Ok(Self::Binary(Self::string_to_binary(
                 serde_json::to_string(&value)?,
             )?)),
-            Self::OSC(args) => todo!(),
+            Self::OSC(_) => Err(anyhow::Error::msg("Can't convert OSC to binary")),
         }
     }
 
@@ -66,7 +66,9 @@ impl InternalMessageData {
             InternalMessageData::String(value) => {
                 Ok(InternalMessageData::OSC(vec![OscType::String(value)]))
             }
-            InternalMessageData::Binary(bytes) => todo!(),
+            InternalMessageData::Binary(_) => {
+                Err(anyhow::Error::msg("Can't convert OSC to binary"))
+            }
             InternalMessageData::Json(value) => {
                 Ok(InternalMessageData::OSC(Self::json_array_to_osc(value)?))
             }
@@ -159,8 +161,10 @@ impl InternalMessageData {
             )),
             OscType::Array(osc_array) => Ok(Self::osc_args_to_json(osc_array.content)?),
             OscType::Nil => Ok(Value::Null),
-            OscType::Inf => todo!(),
-            OscType::Color(_) => Err(anyhow::Error::msg("Can't convert OSC Color to JSON")),
+            OscType::Inf => Err(anyhow::Error::msg("Can't convert OSC Inf to JSON")),
+            OscType::Color(color) => Ok(
+                json!({"red": color.red, "green": color.green, "blue": color.blue, "alpha": color.alpha}),
+            ),
             OscType::Midi(_) => Err(anyhow::Error::msg("Can't convert OSC Midi to JSON")),
             OscType::Blob(_) => Err(anyhow::Error::msg("Can't convert OSC Blob to JSON")),
             OscType::Time(_) => Err(anyhow::Error::msg("Can't convert OSC Time to JSON")),
