@@ -4,7 +4,7 @@ use rosc::{OscMessage, OscPacket};
 use serde::Deserialize;
 use tokio::{net::UdpSocket, sync::mpsc};
 
-use crate::{message::InternalMessage, block::Connection};
+use crate::{block::Connection, message::InternalMessage};
 
 use super::{ConnectorHandle, SourceTX};
 
@@ -22,21 +22,23 @@ pub async fn make_osc_send_connector(
 ) -> anyhow::Result<ConnectorHandle> {
     let (sink_tx, mut sink_rx) = mpsc::channel::<InternalMessage>(32);
 
-    tokio::task::spawn(async move {
-        let host_addr = SocketAddrV4::from_str("0.0.0.0:0").unwrap();
-        let to_addr =
-            SocketAddrV4::from_str(format!("{}:{}", config.host, config.port).as_str()).unwrap();
-        let sock = UdpSocket::bind(host_addr).await.unwrap();
+    let host_addr = SocketAddrV4::from_str("0.0.0.0:0")?;
+    let to_addr = SocketAddrV4::from_str(format!("{}:{}", config.host, config.port).as_str())?;
+    let sock = UdpSocket::bind(host_addr).await?;
 
+    tokio::task::spawn(async move {
         loop {
             if let Some(msg) = sink_rx.recv().await {
-                let msg_buf = rosc::encoder::encode(&OscPacket::Message(OscMessage {
-                    addr: msg.topic,
-                    args: msg.data.get_osc().unwrap(),
-                }))
-                .unwrap();
+                if let Ok(args) = msg.data.get_osc() {
+                    let msg_buf = rosc::encoder::encode(&OscPacket::Message(OscMessage {
+                        addr: msg.topic,
+                        args,
+                    }));
 
-                sock.send_to(&msg_buf, to_addr).await.unwrap();
+                    if let Ok(msg_buf) = msg_buf {
+                        sock.send_to(&msg_buf, to_addr).await.ok();
+                    }
+                }
             }
         }
     });

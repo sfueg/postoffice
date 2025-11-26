@@ -1,6 +1,6 @@
 use std::vec;
 
-use anyhow::{Context, Ok};
+use anyhow::Context;
 use bytes::Bytes;
 use rosc::{OscArray, OscType};
 use serde_json::{Number, Value};
@@ -106,8 +106,8 @@ impl InternalMessageData {
         match value {
             Value::Array(values) => Ok(values
                 .into_iter()
-                .map(|value| Self::json_to_osc(value).unwrap())
-                .collect()),
+                .map(|value| Self::json_to_osc(value))
+                .collect::<anyhow::Result<Vec<_>>>()?),
             _ => Err(anyhow::Error::msg(
                 "Can only convert JSON Array to OSC at the top level",
             )),
@@ -119,8 +119,8 @@ impl InternalMessageData {
             Value::Array(values) => Ok(OscType::Array(OscArray {
                 content: values
                     .into_iter()
-                    .map(|value| Self::json_to_osc(value).unwrap())
-                    .collect(),
+                    .map(|value| Self::json_to_osc(value))
+                    .collect::<anyhow::Result<Vec<_>>>()?,
             })),
             Value::Null => Ok(OscType::Nil),
             Value::Bool(value) => Ok(OscType::Bool(value)),
@@ -139,8 +139,8 @@ impl InternalMessageData {
     fn osc_args_to_json(args: Vec<OscType>) -> anyhow::Result<Value> {
         return Ok(Value::Array(
             args.into_iter()
-                .map(|value| Self::osc_to_json(value).unwrap())
-                .collect(),
+                .map(|value| Self::osc_to_json(value))
+                .collect::<anyhow::Result<Vec<_>>>()?,
         ));
     }
 

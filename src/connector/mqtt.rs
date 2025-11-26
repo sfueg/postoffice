@@ -50,16 +50,15 @@ pub async fn make_mqtt_connector(
 
                 match msg {
                     Some(msg) => {
-                        c2.publish(
-                            msg.topic,
-                            QoS::AtLeastOnce,
-                            false,
-                            msg.data.get_binary().unwrap(),
-                        )
-                        .await
-                        .unwrap();
+                        if let Ok(payload) = msg.data.get_binary() {
+                            c2.publish(msg.topic, QoS::AtLeastOnce, false, payload)
+                                .await
+                                .expect("[MQTT]: Failed to publish message");
+                        }
                     }
-                    None => todo!(),
+                    None => panic!(
+                        "Unable to recv from sink_rx. This means that all sink_tx are closed"
+                    ),
                 }
             }
         });
@@ -70,7 +69,7 @@ pub async fn make_mqtt_connector(
                     rumqttc::Packet::ConnAck(_) => {
                         subscribe_to_topics(&client, &config.topics, is_source)
                             .await
-                            .unwrap();
+                            .expect("Unable to subscribe to topics");
                     }
                     rumqttc::Packet::Publish(publish) => {
                         let msg = InternalMessage {
@@ -79,7 +78,10 @@ pub async fn make_mqtt_connector(
                             data: InternalMessageData::Binary(publish.payload),
                         };
 
-                        source_tx.send(msg).await.unwrap();
+                        source_tx
+                            .send(msg)
+                            .await
+                            .expect("Unable to send messages to source_rx");
                     }
                     _ => {}
                 },
@@ -105,10 +107,10 @@ async fn subscribe_to_topics(
     if is_source {
         if let Some(topics) = topics {
             for topic in topics {
-                client.subscribe(topic, QoS::ExactlyOnce).await.unwrap();
+                client.subscribe(topic, QoS::ExactlyOnce).await?;
             }
         } else {
-            client.subscribe("#", QoS::ExactlyOnce).await.unwrap();
+            client.subscribe("#", QoS::ExactlyOnce).await?;
         }
     } else {
         println!("[MQTT]: Skipping subscribe because it will drop all messages anyway...");

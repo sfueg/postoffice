@@ -28,7 +28,9 @@ async fn main() {
 
     let (source_tx, mut source_rx) = mpsc::channel::<InternalMessage>(32);
 
-    let pipeline = Arc::new(Pipeline::new(config.blocks, args.ignore_cycles).unwrap());
+    let pipeline = Arc::new(
+        Pipeline::new(config.blocks, args.ignore_cycles).expect("Unable to create pipeline"),
+    );
 
     println!("Starting connectors");
 
@@ -36,7 +38,9 @@ async fn main() {
 
     for (idx, con) in config.connectors.into_iter().enumerate() {
         println!("Starting connector with index {:#?}", idx);
-        let handle = make_connector(idx, source_tx.clone(), con).await.unwrap();
+        let handle = make_connector(idx, source_tx.clone(), con)
+            .await
+            .expect(&format!("Unable to make_connector with index {}", idx));
         connector_handles.push(handle);
     }
 
@@ -65,7 +69,7 @@ async fn main() {
                             "Missing connector with index {}",
                             incoming.source_connector_idx,
                         ))
-                        .unwrap()
+                        .expect("Failed to get connector")
                         .clone();
 
                     let mut collector: Vec<(usize, InternalMessage)> = vec![];
@@ -73,7 +77,7 @@ async fn main() {
                     pipeline
                         .handle_message_with_connections(&handle.to, incoming, &mut collector)
                         .await
-                        .unwrap();
+                        .expect("Failed to handle message");
 
                     if args.debug {
                         println!("Collected messages {:#?}", collector);
@@ -85,13 +89,22 @@ async fn main() {
                         let handle = connector_handles
                             .get(sink_idx)
                             .context(format!("Missing sink with index {}", sink_idx))
-                            .unwrap();
+                            .expect("Failed to get sink");
 
-                        handle.sink_tx.send(message).await.unwrap();
+                        handle.sink_tx.send(message).await.expect(&format!(
+                            "Failed to send message to sink_rx with idx {}",
+                            sink_idx
+                        ));
                     }
                 });
             }
-            None => {}
+            None => {
+                // This can only happen if `source_rx.recv()` returns `None` which means
+                // that all `source_tx` channel halfs are closed.
+                panic!(
+                    "source_rx.recv() returned None which means that no work can be done at this point"
+                )
+            }
         }
     }
 }

@@ -101,7 +101,8 @@ Run with --ignore-cycles to ignore cycles
         }
 
         for message in next_messages {
-            self.handle_message_with_connections(&handle.to, message, collector).await?;
+            self.handle_message_with_connections(&handle.to, message, collector)
+                .await?;
         }
 
         return Ok(());
@@ -119,7 +120,10 @@ Run with --ignore-cycles to ignore cycles
     fn get_cycles_from_block(self: &Self, block_idx: usize) -> Option<Vec<usize>> {
         let mut path = vec![block_idx];
 
-        let block = self.blocks.get(block_idx).unwrap();
+        let block = self
+            .blocks
+            .get(block_idx)
+            .expect(&format!("Failed to get block with idx {}", block_idx));
 
         for to in &block.to {
             match to {
@@ -143,7 +147,10 @@ Run with --ignore-cycles to ignore cycles
             // Add self
             path.push(block_idx);
 
-            let block = self.blocks.get(block_idx).unwrap();
+            let block = self
+                .blocks
+                .get(block_idx)
+                .expect(&format!("Failed to get block with idx {}", block_idx));
             for to in &block.to {
                 match to {
                     Connection::Block(block_idx) => {

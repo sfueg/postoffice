@@ -5,8 +5,8 @@ use serde::Deserialize;
 use tokio::{net::UdpSocket, sync::mpsc};
 
 use crate::{
-    message::{InternalMessage, InternalMessageData},
     block::Connection,
+    message::{InternalMessage, InternalMessageData},
 };
 
 use super::{ConnectorHandle, SourceTX};
@@ -25,20 +25,24 @@ pub async fn make_osc_recv_connector(
 ) -> anyhow::Result<ConnectorHandle> {
     let (sink_tx, mut _sink_rx) = mpsc::channel::<InternalMessage>(32);
 
-    tokio::task::spawn(async move {
-        let addr = format!("{}:{}", config.interface, config.port);
-        let addr = SocketAddrV4::from_str(addr.as_str()).unwrap();
-        let sock = UdpSocket::bind(addr).await.unwrap();
+    let addr = format!("{}:{}", config.interface, config.port);
+    let addr = SocketAddrV4::from_str(addr.as_str())?;
+    let sock = UdpSocket::bind(addr).await?;
 
+    tokio::task::spawn(async move {
         let mut buf = [0u8; rosc::decoder::MTU];
 
         loop {
             if let Ok(size) = sock.recv(&mut buf).await {
-                let (_, packet) = rosc::decoder::decode_udp(&buf[..size]).unwrap();
-                let messages = collect_messages_from_osc_packet(idx, packet);
+                if let Ok((_, packet)) = rosc::decoder::decode_udp(&buf[..size]) {
+                    let messages = collect_messages_from_osc_packet(idx, packet);
 
-                for message in messages {
-                    source_tx.send(message).await.unwrap();
+                    for message in messages {
+                        source_tx
+                            .send(message)
+                            .await
+                            .expect("Unable to send messages to source_rx");
+                    }
                 }
             }
         }
