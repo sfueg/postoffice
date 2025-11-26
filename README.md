@@ -17,7 +17,7 @@ A `block` is something that can filter or transform a message.
 
 The `pipeline` is build by defining links to a `block` or `sink`. This is done by defining a `to` section on a `block` or `source`.
 
-```json
+```jsonc
 {
   "connectors": [
     {
