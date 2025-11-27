@@ -4,7 +4,11 @@ use rosc::{OscMessage, OscPacket};
 use serde::Deserialize;
 use tokio::{net::UdpSocket, sync::mpsc};
 
-use crate::{block::Connection, message::InternalMessage};
+use crate::{
+    block::Connection,
+    lifecycle::{LifeCycleMessage, LifeCycleTX},
+    message::InternalMessage,
+};
 
 use super::{ConnectorHandle, SourceTX};
 
@@ -15,10 +19,11 @@ pub struct OSCSendConnectorConfig {
 }
 
 pub async fn make_osc_send_connector(
-    _idx: usize,
+    idx: usize,
     _source_tx: SourceTX,
     config: OSCSendConnectorConfig,
     to: Option<Vec<Connection>>,
+    lifecycle_tx: LifeCycleTX,
 ) -> anyhow::Result<ConnectorHandle> {
     let (sink_tx, mut sink_rx) = mpsc::channel::<InternalMessage>(32);
 
@@ -27,6 +32,11 @@ pub async fn make_osc_send_connector(
     let sock = UdpSocket::bind(host_addr).await?;
 
     tokio::task::spawn(async move {
+        lifecycle_tx
+            .send(LifeCycleMessage::Ready { idx })
+            .await
+            .expect("Failed to send LifeCycleMessage");
+
         loop {
             if let Some(msg) = sink_rx.recv().await {
                 if let Ok(args) = msg.data.get_osc() {
@@ -36,7 +46,15 @@ pub async fn make_osc_send_connector(
                     }));
 
                     if let Ok(msg_buf) = msg_buf {
-                        sock.send_to(&msg_buf, to_addr).await.ok();
+                        match sock.send_to(&msg_buf, to_addr).await {
+                            Ok(_) => {}
+                            Err(e) => {
+                                lifecycle_tx
+                                    .send(LifeCycleMessage::Failed { idx, err: e.into() })
+                                    .await
+                                    .expect("Failed to send LifeCycleMessage");
+                            }
+                        }
                     }
                 }
             }

@@ -9,7 +9,12 @@ use osc_send::{OSCSendConnectorConfig, make_osc_send_connector};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 
-use crate::{block::Connection, connector::udp_send::{make_udp_send_connector, UDPSendConnectorConfig}, message::InternalMessage};
+use crate::{
+    block::Connection,
+    connector::udp_send::{UDPSendConnectorConfig, make_udp_send_connector},
+    lifecycle::LifeCycleTX,
+    message::InternalMessage,
+};
 
 #[derive(Debug, Clone)]
 pub struct ConnectorHandle {
@@ -45,19 +50,20 @@ pub async fn make_connector(
     idx: usize,
     source_tx: SourceTX,
     config: ConnectorConfig,
+    lifecycle_tx: LifeCycleTX,
 ) -> anyhow::Result<ConnectorHandle> {
     match config {
         ConnectorConfig::MQTT { config, to } => {
-            make_mqtt_connector(idx, source_tx, config, to).await
+            make_mqtt_connector(idx, source_tx, config, to, lifecycle_tx).await
         }
         ConnectorConfig::OSCRecv { config, to } => {
-            make_osc_recv_connector(idx, source_tx, config, to).await
+            make_osc_recv_connector(idx, source_tx, config, to, lifecycle_tx).await
         }
         ConnectorConfig::OSCSend { config } => {
-            make_osc_send_connector(idx, source_tx, config, None).await
+            make_osc_send_connector(idx, source_tx, config, None, lifecycle_tx).await
         }
         ConnectorConfig::UDPSend { config } => {
-            make_udp_send_connector(idx, source_tx, config, None).await
+            make_udp_send_connector(idx, source_tx, config, None, lifecycle_tx).await
         }
     }
 }

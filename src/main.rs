@@ -1,6 +1,7 @@
 mod block;
 mod cli;
 mod connector;
+mod lifecycle;
 mod message;
 mod pipeline;
 
@@ -12,6 +13,7 @@ use cli::{Args, get_config};
 use tokio::sync::mpsc;
 
 use connector::{ConnectorHandle, make_connector};
+use lifecycle::{LifeCycleHandler, LifeCycleMessage};
 use message::InternalMessage;
 use pipeline::Pipeline;
 
@@ -26,6 +28,15 @@ async fn main() {
         println!("{:#?}", config);
     }
 
+    let life_cycle_handler = LifeCycleHandler::start(
+        config
+            .connectors
+            .iter()
+            .enumerate()
+            .map(|(idx, _)| idx)
+            .collect(),
+    );
+
     let (source_tx, mut source_rx) = mpsc::channel::<InternalMessage>(32);
 
     let pipeline = Arc::new(
@@ -37,16 +48,39 @@ async fn main() {
     let mut connector_handles: Vec<ConnectorHandle> = vec![];
 
     for (idx, con) in config.connectors.into_iter().enumerate() {
-        println!("Starting connector with index {:#?}", idx);
-        let handle = make_connector(idx, source_tx.clone(), con)
-            .await
-            .expect(&format!("Unable to make_connector with index {}", idx));
-        connector_handles.push(handle);
+        println!("[Connector {}] Starting", idx);
+        let handle = make_connector(
+            idx,
+            source_tx.clone(),
+            con,
+            life_cycle_handler.lifecycle_tx.clone(),
+        )
+        .await;
+
+        match handle {
+            Ok(handle) => {
+                connector_handles.push(handle);
+            }
+            Err(e) => {
+                life_cycle_handler
+                    .lifecycle_tx
+                    .send(LifeCycleMessage::Exited { idx, err: e.into() })
+                    .await
+                    .expect("Failed to send LifeCycleMessage");
+            }
+        }
     }
 
     let connector_handles = Arc::new(connector_handles);
 
-    println!("Ready for incoming Messages");
+    println!("Waiting for connectors");
+
+    life_cycle_handler
+        .wait_all_ready()
+        .await
+        .expect("Unable to wait_all_ready");
+
+    println!("Startup complete");
 
     loop {
         let incoming = source_rx.recv().await;

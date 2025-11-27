@@ -6,6 +6,7 @@ use tokio::sync::mpsc;
 
 use crate::{
     block::Connection,
+    lifecycle::{LifeCycleMessage, LifeCycleTX},
     message::{InternalMessage, InternalMessageData},
 };
 
@@ -24,6 +25,7 @@ pub async fn make_mqtt_connector(
     source_tx: SourceTX,
     config: MQTTConnectorConfig,
     to: Option<Vec<Connection>>,
+    lifecycle_tx: LifeCycleTX,
 ) -> anyhow::Result<ConnectorHandle> {
     let (sink_tx, mut sink_rx) = mpsc::channel::<InternalMessage>(32);
 
@@ -44,6 +46,7 @@ pub async fn make_mqtt_connector(
         let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
 
         let c2 = client.clone();
+        let lifecycle_tx2 = lifecycle_tx.clone();
         tokio::task::spawn(async move {
             loop {
                 let msg = sink_rx.recv().await;
@@ -51,9 +54,19 @@ pub async fn make_mqtt_connector(
                 match msg {
                     Some(msg) => {
                         if let Ok(payload) = msg.data.get_binary() {
-                            c2.publish(msg.topic, QoS::AtLeastOnce, false, payload)
+                            match c2
+                                .publish(msg.topic, QoS::AtLeastOnce, false, payload)
                                 .await
-                                .expect("[MQTT]: Failed to publish message");
+                            {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    lifecycle_tx2
+                                        .clone()
+                                        .send(LifeCycleMessage::Failed { idx, err: e.into() })
+                                        .await
+                                        .expect("Failed to send LifeCycleMessage");
+                                }
+                            }
                         }
                     }
                     None => panic!(
@@ -70,6 +83,11 @@ pub async fn make_mqtt_connector(
                         subscribe_to_topics(&client, &config.topics, is_source)
                             .await
                             .expect("Unable to subscribe to topics");
+
+                        lifecycle_tx
+                            .send(LifeCycleMessage::Ready { idx })
+                            .await
+                            .expect("Failed to send LifeCycleMessage");
                     }
                     rumqttc::Packet::Publish(publish) => {
                         let msg = InternalMessage {
@@ -86,9 +104,10 @@ pub async fn make_mqtt_connector(
                     _ => {}
                 },
                 Ok(_) => {}
-                Err(e) => {
-                    println!("[MQTT]: ConnectionError: {:#?}", e);
-                }
+                Err(e) => lifecycle_tx
+                    .send(LifeCycleMessage::Disconnected { idx, err: e.into() })
+                    .await
+                    .expect("Failed to send LifeCycleMessage"),
             }
         }
     });
